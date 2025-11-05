@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  backend:
+    build: ./backend-mern-eats
+    ports:
+      - "7000:7000"
+    env_file:
+      - ./backend-mern-eats/.env
+
+  frontend:
+    build: ./frontend-mern-eats
+    ports:
+      - "4173:4173"
+    env_file:
+      - ./frontend-mern-eats/.env
+    depends_on:
+      - backend
