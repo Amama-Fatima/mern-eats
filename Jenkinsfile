@@ -32,6 +32,12 @@ pipeline {
                                 # Create Maven local repository directory
                                 mkdir -p $WORKSPACE/.m2/repository
                                 
+                                # Create WebDriverManager cache directory
+                                mkdir -p $WORKSPACE/.wdm
+                                
+                                # Create temp directory for WebDriverManager
+                                mkdir -p $WORKSPACE/tmp
+                                
                                 echo "Maven version:"
                                 mvn --version
                                 
@@ -39,7 +45,12 @@ pipeline {
                                 google-chrome --version || true
                                 
                                 echo "Running tests..."
-                                mvn clean test -Dheadless=true -Dmaven.repo.local=$WORKSPACE/.m2/repository
+                                mvn clean test \
+                                    -Dheadless=true \
+                                    -Dmaven.repo.local=$WORKSPACE/.m2/repository \
+                                    -Dwdm.cachePath=$WORKSPACE/.wdm \
+                                    -Dwdm.forceDownload=false \
+                                    -Djava.io.tmpdir=$WORKSPACE/tmp
                             '''
                         }
                     }
@@ -51,13 +62,11 @@ pipeline {
             steps {
                 echo 'Publishing test reports...'
                 
-                // Publish TestNG results
                 step([
                     $class: 'Publisher',
                     reportFilenamePattern: 'selenium-tests/target/surefire-reports/testng-results.xml'
                 ])
                 
-                // Publish HTML reports
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
@@ -75,10 +84,8 @@ pipeline {
         always {
             echo 'Pipeline execution completed.'
             
-            // Archive test results
             archiveArtifacts artifacts: 'selenium-tests/target/surefire-reports/**/*', allowEmptyArchive: true
             
-            // Clean workspace
             cleanWs()
         }
         
