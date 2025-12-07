@@ -26,14 +26,14 @@ pipeline {
             steps {
                 echo 'Running Selenium tests in Docker container...'
                 script {
-                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g') {
+                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g -v /tmp/maven-repo:/root/.m2') {
                         dir('selenium-tests') {
                             sh '''
                                 echo "Maven version:"
                                 mvn --version
                                 
                                 echo "Google Chrome version:"
-                                google-chrome --version
+                                google-chrome --version || true
                                 
                                 echo "Running tests..."
                                 mvn clean test -Dheadless=true
