@@ -14,7 +14,6 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.UUID;
 
 /**
  * WebDriver manager utility class
@@ -41,24 +40,39 @@ public class DriverManager {
                     WebDriverManager.chromedriver().setup();
                     ChromeOptions options = new ChromeOptions();
                     
-                    // Create unique user data directory to avoid conflicts
-                    String baseDir = System.getProperty("chrome.userDataDir", System.getProperty("java.io.tmpdir"));
-                    String uniqueId = UUID.randomUUID().toString();
-                    String userDataDir = baseDir + "/chrome-profile-" + uniqueId;
-                    options.addArguments("--user-data-dir=" + userDataDir);
-                    
                     if (config.isHeadless()) {
                         options.addArguments("--headless=new");
                     }
                     
+                    // Essential flags for Docker/EC2 environments
                     options.addArguments("--no-sandbox");
                     options.addArguments("--disable-dev-shm-usage");
                     options.addArguments("--disable-gpu");
+                    options.addArguments("--disable-software-rasterizer");
                     options.addArguments("--window-size=1920,1080");
                     options.addArguments("--disable-extensions");
                     options.addArguments("--disable-popup-blocking");
                     options.addArguments("--start-maximized");
                     options.addArguments("--remote-allow-origins=*");
+                    
+                    // Critical: Single session mode - don't use profiles at all
+                    options.addArguments("--single-process");
+                    options.addArguments("--no-first-run");
+                    options.addArguments("--no-default-browser-check");
+                    options.addArguments("--disable-background-networking");
+                    options.addArguments("--disable-background-timer-throttling");
+                    options.addArguments("--disable-backgrounding-occluded-windows");
+                    options.addArguments("--disable-breakpad");
+                    options.addArguments("--disable-component-extensions-with-background-pages");
+                    options.addArguments("--disable-features=TranslateUI,BlinkGenPropertyTrees");
+                    options.addArguments("--disable-ipc-flooding-protection");
+                    options.addArguments("--disable-renderer-backgrounding");
+                    
+                    // Generate unique remote debugging port
+                    int remotePort = 9000 + (int)(Math.random() * 1000);
+                    options.addArguments("--remote-debugging-port=" + remotePort);
+                    
+                    System.out.println("Starting Chrome on port: " + remotePort);
                     
                     webDriver = new ChromeDriver(options);
                     break;
