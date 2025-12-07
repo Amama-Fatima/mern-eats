@@ -40,6 +40,11 @@ public class DriverManager {
                     WebDriverManager.chromedriver().setup();
                     ChromeOptions options = new ChromeOptions();
                     
+                    // Create unique user data directory to avoid conflicts
+                    String baseDir = System.getProperty("chrome.userDataDir", System.getProperty("java.io.tmpdir"));
+                    String userDataDir = baseDir + "/chrome-profile-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
+                    options.addArguments("--user-data-dir=" + userDataDir);
+                    
                     if (config.isHeadless()) {
                         options.addArguments("--headless=new");
                     }

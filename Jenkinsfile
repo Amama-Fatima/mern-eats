@@ -38,6 +38,9 @@ pipeline {
                                 # Create temp directory for WebDriverManager
                                 mkdir -p $WORKSPACE/tmp
                                 
+                                # Create Chrome user profiles directory
+                                mkdir -p $WORKSPACE/chrome-profiles
+                                
                                 echo "Maven version:"
                                 mvn --version
                                 
@@ -50,7 +53,8 @@ pipeline {
                                     -Dmaven.repo.local=$WORKSPACE/.m2/repository \
                                     -Dwdm.cachePath=$WORKSPACE/.wdm \
                                     -Dwdm.forceDownload=false \
-                                    -Djava.io.tmpdir=$WORKSPACE/tmp
+                                    -Djava.io.tmpdir=$WORKSPACE/tmp \
+                                    -Dchrome.userDataDir=$WORKSPACE/chrome-profiles
                             '''
                         }
                     }
@@ -62,11 +66,13 @@ pipeline {
             steps {
                 echo 'Publishing test reports...'
                 
+                // Publish TestNG results
                 step([
                     $class: 'Publisher',
                     reportFilenamePattern: 'selenium-tests/target/surefire-reports/testng-results.xml'
                 ])
                 
+                // Publish HTML reports
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
@@ -84,8 +90,10 @@ pipeline {
         always {
             echo 'Pipeline execution completed.'
             
+            // Archive test results
             archiveArtifacts artifacts: 'selenium-tests/target/surefire-reports/**/*', allowEmptyArchive: true
             
+            // Clean workspace
             cleanWs()
         }
         
