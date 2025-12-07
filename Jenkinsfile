@@ -41,6 +41,10 @@ pipeline {
                                 # Create Chrome user profiles directory
                                 mkdir -p $WORKSPACE/chrome-profiles
                                 
+                                # Clean any leftover Chrome lock files from previous builds
+                                echo "Cleaning Chrome profile directory..."
+                                rm -rf $WORKSPACE/chrome-profiles/*
+                                
                                 echo "Maven version:"
                                 mvn --version
                                 
