@@ -26,9 +26,12 @@ pipeline {
             steps {
                 echo 'Running Selenium tests in Docker container...'
                 script {
-                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g -e MAVEN_OPTS="-Dmaven.repo.local=/var/lib/jenkins/workspace/.m2/repository"') {
+                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g') {
                         dir('selenium-tests') {
                             sh '''
+                                # Create Maven local repository directory
+                                mkdir -p $WORKSPACE/.m2/repository
+                                
                                 echo "Maven version:"
                                 mvn --version
                                 
@@ -36,7 +39,7 @@ pipeline {
                                 google-chrome --version || true
                                 
                                 echo "Running tests..."
-                                mvn clean test -Dheadless=true -Dmaven.repo.local=/var/lib/jenkins/workspace/.m2/repository
+                                mvn clean test -Dheadless=true -Dmaven.repo.local=$WORKSPACE/.m2/repository
                             '''
                         }
                     }
