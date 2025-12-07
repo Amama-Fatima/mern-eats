@@ -3,6 +3,7 @@ pipeline {
     
     environment {
         DOCKER_IMAGE = 'markhobson/maven-chrome:latest'
+        MAVEN_OPTS = '-Duser.home=$WORKSPACE'
     }
     
     stages {
@@ -26,24 +27,36 @@ pipeline {
             steps {
                 echo 'Running Selenium tests in Docker container...'
                 script {
-                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g') {
+                    docker.image("${DOCKER_IMAGE}").inside('--shm-size=2g --ulimit nofile=1024:1024') {
                         dir('selenium-tests') {
                             sh '''
-                                # Create Maven local repository directory
+                                # Kill any existing Chrome/chromedriver processes
+                                echo "Killing existing Chrome processes..."
+                                pkill -9 chrome || true
+                                pkill -9 chromedriver || true
+                                pkill -9 Google || true
+                                
+                                # Clean all workspace directories
+                                echo "Cleaning workspace directories..."
+                                rm -rf $WORKSPACE/.m2 || true
+                                rm -rf $WORKSPACE/.wdm || true
+                                rm -rf $WORKSPACE/tmp || true
+                                rm -rf $WORKSPACE/chrome-profiles || true
+                                rm -rf /tmp/.com.google.Chrome* || true
+                                rm -rf /tmp/.org.chromium.Chromium* || true
+                                
+                                # Create fresh directories with proper permissions
+                                echo "Creating fresh directories..."
                                 mkdir -p $WORKSPACE/.m2/repository
-                                
-                                # Create WebDriverManager cache directory
                                 mkdir -p $WORKSPACE/.wdm
-                                
-                                # Create temp directory for WebDriverManager
                                 mkdir -p $WORKSPACE/tmp
-                                
-                                # Create Chrome user profiles directory
                                 mkdir -p $WORKSPACE/chrome-profiles
                                 
-                                # Clean any leftover Chrome lock files from previous builds
-                                echo "Cleaning Chrome profile directory..."
-                                rm -rf $WORKSPACE/chrome-profiles/*
+                                # Set proper permissions
+                                chmod -R 755 $WORKSPACE/.m2
+                                chmod -R 755 $WORKSPACE/.wdm
+                                chmod -R 755 $WORKSPACE/tmp
+                                chmod -R 755 $WORKSPACE/chrome-profiles
                                 
                                 echo "Maven version:"
                                 mvn --version
@@ -51,14 +64,29 @@ pipeline {
                                 echo "Google Chrome version:"
                                 google-chrome --version || true
                                 
-                                echo "Running tests..."
+                                echo "Java version:"
+                                java -version
+                                
+                                echo "Running tests with single thread execution..."
+                                # Run tests with single thread and proper cleanup
                                 mvn clean test \
                                     -Dheadless=true \
+                                    -Dbrowser=chrome \
+                                    -DbaseUrl=http://localhost:5173 \
                                     -Dmaven.repo.local=$WORKSPACE/.m2/repository \
                                     -Dwdm.cachePath=$WORKSPACE/.wdm \
                                     -Dwdm.forceDownload=false \
                                     -Djava.io.tmpdir=$WORKSPACE/tmp \
-                                    -Dchrome.userDataDir=$WORKSPACE/chrome-profiles
+                                    -Dchrome.userDataDir=$WORKSPACE/chrome-profiles \
+                                    -Dtestng.thread.count=1 \
+                                    -Dsuite.thread.count=1 \
+                                    -Ddataproviderthreadcount=1 \
+                                    -Dsurefire.threadCount=1 \
+                                    -Dparallel=none \
+                                    -DforkCount=1 \
+                                    -DreuseForks=false \
+                                    -DskipTests=false \
+                                    -Dmaven.test.failure.ignore=false
                             '''
                         }
                     }
@@ -78,7 +106,7 @@ pipeline {
                 
                 // Publish HTML reports
                 publishHTML([
-                    allowMissing: false,
+                    allowMissing: true,
                     alwaysLinkToLastBuild: true,
                     keepAll: true,
                     reportDir: 'selenium-tests/target/surefire-reports',
@@ -94,8 +122,9 @@ pipeline {
         always {
             echo 'Pipeline execution completed.'
             
-            // Archive test results
+            // Archive test results (including screenshots if any)
             archiveArtifacts artifacts: 'selenium-tests/target/surefire-reports/**/*', allowEmptyArchive: true
+            archiveArtifacts artifacts: 'selenium-tests/screenshots/**/*', allowEmptyArchive: true
             
             // Clean workspace
             cleanWs()
@@ -107,6 +136,15 @@ pipeline {
         
         failure {
             echo 'Tests failed! ❌'
+            
+            // Additional failure logging
+            script {
+                sh '''
+                    echo "=== FAILURE DETAILS ==="
+                    echo "Checking for test reports..."
+                    ls -la selenium-tests/target/surefire-reports/ || echo "No test reports found"
+                '''
+            }
         }
     }
 }

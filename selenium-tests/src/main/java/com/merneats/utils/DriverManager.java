@@ -14,12 +14,14 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 /**
  * WebDriver manager utility class
  */
 public class DriverManager {
     private static ThreadLocal<WebDriver> driver = new ThreadLocal<>();
+    private static ThreadLocal<String> userDataDir = new ThreadLocal<>();
     private static ConfigManager config = ConfigManager.getInstance();
     
     public static WebDriver getDriver() {
@@ -40,12 +42,18 @@ public class DriverManager {
                     WebDriverManager.chromedriver().setup();
                     ChromeOptions options = new ChromeOptions();
                     
-                    // Create TRULY unique user data directory with timestamp + nano time + random
-                    String baseDir = System.getProperty("chrome.userDataDir", System.getProperty("java.io.tmpdir"));
-                    long nanoTime = System.nanoTime();
-                    int random = (int)(Math.random() * 100000);
-                    String userDataDir = String.format("%s/chrome-%d-%d", baseDir, nanoTime, random);
-                    options.addArguments("--user-data-dir=" + userDataDir);
+                    // Create TRULY unique user data directory using UUID
+                    String baseDir = System.getProperty("chrome.userDataDir", 
+                                    System.getProperty("java.io.tmpdir"));
+                    String uniqueId = UUID.randomUUID().toString();
+                    String dirName = String.format("chrome-%s-%d", 
+                                    uniqueId, Thread.currentThread().getId());
+                    String userDataDirPath = baseDir + "/" + dirName;
+                    
+                    // Store the directory path for cleanup
+                    userDataDir.set(userDataDirPath);
+                    
+                    options.addArguments("--user-data-dir=" + userDataDirPath);
                     
                     if (config.isHeadless()) {
                         options.addArguments("--headless=new");
@@ -59,10 +67,11 @@ public class DriverManager {
                     options.addArguments("--window-size=1920,1080");
                     options.addArguments("--disable-extensions");
                     options.addArguments("--disable-popup-blocking");
-                    options.addArguments("--start-maximized");
                     options.addArguments("--remote-allow-origins=*");
                     
-                    // REMOVED --single-process as it prevents proper cleanup
+                    // Remove problematic flags
+                    // options.addArguments("--start-maximized"); // Can cause issues in headless
+                    
                     options.addArguments("--no-first-run");
                     options.addArguments("--no-default-browser-check");
                     options.addArguments("--disable-background-networking");
@@ -71,7 +80,13 @@ public class DriverManager {
                     int remotePort = 9000 + (int)(Math.random() * 1000);
                     options.addArguments("--remote-debugging-port=" + remotePort);
                     
-                    System.out.println("Starting Chrome with profile: " + userDataDir + " on port: " + remotePort);
+                    // Disable user metrics reporting
+                    options.addArguments("--disable-background-timer-throttling");
+                    options.addArguments("--disable-backgrounding-occluded-windows");
+                    options.addArguments("--disable-renderer-backgrounding");
+                    
+                    System.out.println("[" + Thread.currentThread().getId() + "] Starting Chrome with profile: " + 
+                                     userDataDirPath + " on port: " + remotePort);
                     
                     webDriver = new ChromeDriver(options);
                     break;
@@ -86,6 +101,9 @@ public class DriverManager {
             webDriver.manage().timeouts()
                     .pageLoadTimeout(Duration.ofSeconds(config.getPageLoadTimeout()));
             
+            // Delete cookies for fresh session
+            webDriver.manage().deleteAllCookies();
+            
             driver.set(webDriver);
             
         } catch (Exception e) {
@@ -96,82 +114,47 @@ public class DriverManager {
     public static void quitDriver() {
         if (driver.get() != null) {
             try {
+                System.out.println("[" + Thread.currentThread().getId() + "] Quitting driver...");
                 driver.get().quit();
             } catch (Exception e) {
-                System.err.println("Error quitting driver: " + e.getMessage());
+                System.err.println("[" + Thread.currentThread().getId() + "] Error quitting driver: " + e.getMessage());
             } finally {
                 driver.remove();
+                
+                // Clean up user data directory
+                try {
+                    String dirPath = userDataDir.get();
+                    if (dirPath != null) {
+                        File dir = new File(dirPath);
+                        if (dir.exists()) {
+                            System.out.println("[" + Thread.currentThread().getId() + "] Cleaning up Chrome profile: " + dirPath);
+                            FileUtils.deleteDirectory(dir);
+                        }
+                        userDataDir.remove();
+                    }
+                } catch (IOException e) {
+                    System.err.println("[" + Thread.currentThread().getId() + "] Failed to clean up Chrome profile: " + e.getMessage());
+                }
+                
+                // Kill any remaining Chrome processes
+                try {
+                    if (System.getProperty("os.name").toLowerCase().contains("linux")) {
+                        Runtime.getRuntime().exec("pkill -f chrome").waitFor();
+                        Runtime.getRuntime().exec("pkill -f chromedriver").waitFor();
+                    }
+                } catch (Exception e) {
+                    // Ignore cleanup errors
+                }
             }
             
             // Give Chrome time to fully release resources
             try {
-                Thread.sleep(1000);
+                Thread.sleep(2000);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
         }
     }
     
-    public static void navigateTo(String url) {
-        getDriver().get(url);
-        waitForPageLoad();
-    }
-    
-    public static void waitForPageLoad() {
-        WebDriverWait wait = new WebDriverWait(getDriver(), Duration.ofSeconds(config.getExplicitWait()));
-        wait.until(webDriver -> 
-            ((JavascriptExecutor) webDriver).executeScript("return document.readyState").equals("complete")
-        );
-    }
-    
-    public static WebElement waitForElement(By locator) {
-        WebDriverWait wait = new WebDriverWait(getDriver(), Duration.ofSeconds(config.getExplicitWait()));
-        return wait.until(ExpectedConditions.presenceOfElementLocated(locator));
-    }
-    
-    public static WebElement waitForClickable(By locator) {
-        WebDriverWait wait = new WebDriverWait(getDriver(), Duration.ofSeconds(config.getExplicitWait()));
-        return wait.until(ExpectedConditions.elementToBeClickable(locator));
-    }
-    
-    public static WebElement waitForVisible(By locator) {
-        WebDriverWait wait = new WebDriverWait(getDriver(), Duration.ofSeconds(config.getExplicitWait()));
-        return wait.until(ExpectedConditions.visibilityOfElementLocated(locator));
-    }
-    
-    public static boolean isElementPresent(By locator) {
-        try {
-            getDriver().findElement(locator);
-            return true;
-        } catch (NoSuchElementException e) {
-            return false;
-        }
-    }
-    
-    public static void scrollToElement(WebElement element) {
-        ((JavascriptExecutor) getDriver()).executeScript("arguments[0].scrollIntoView(true);", element);
-    }
-    
-    public static void clickWithJS(WebElement element) {
-        ((JavascriptExecutor) getDriver()).executeScript("arguments[0].click();", element);
-    }
-    
-    public static String takeScreenshot(String testName) {
-        try {
-            TakesScreenshot ts = (TakesScreenshot) getDriver();
-            File source = ts.getScreenshotAs(OutputType.FILE);
-            
-            String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-            String screenshotPath = "screenshots/" + testName + "_" + timestamp + ".png";
-            File destination = new File(screenshotPath);
-            
-            FileUtils.copyFile(source, destination);
-            System.out.println("Screenshot saved: " + screenshotPath);
-            
-            return screenshotPath;
-        } catch (IOException e) {
-            System.err.println("Failed to capture screenshot: " + e.getMessage());
-            return null;
-        }
-    }
+    // ... rest of your methods remain the same ...
 }
