@@ -40,6 +40,13 @@ public class DriverManager {
                     WebDriverManager.chromedriver().setup();
                     ChromeOptions options = new ChromeOptions();
                     
+                    // Create TRULY unique user data directory with timestamp + nano time + random
+                    String baseDir = System.getProperty("chrome.userDataDir", System.getProperty("java.io.tmpdir"));
+                    long nanoTime = System.nanoTime();
+                    int random = (int)(Math.random() * 100000);
+                    String userDataDir = String.format("%s/chrome-%d-%d", baseDir, nanoTime, random);
+                    options.addArguments("--user-data-dir=" + userDataDir);
+                    
                     if (config.isHeadless()) {
                         options.addArguments("--headless=new");
                     }
@@ -55,24 +62,16 @@ public class DriverManager {
                     options.addArguments("--start-maximized");
                     options.addArguments("--remote-allow-origins=*");
                     
-                    // Critical: Single session mode - don't use profiles at all
-                    options.addArguments("--single-process");
+                    // REMOVED --single-process as it prevents proper cleanup
                     options.addArguments("--no-first-run");
                     options.addArguments("--no-default-browser-check");
                     options.addArguments("--disable-background-networking");
-                    options.addArguments("--disable-background-timer-throttling");
-                    options.addArguments("--disable-backgrounding-occluded-windows");
-                    options.addArguments("--disable-breakpad");
-                    options.addArguments("--disable-component-extensions-with-background-pages");
-                    options.addArguments("--disable-features=TranslateUI,BlinkGenPropertyTrees");
-                    options.addArguments("--disable-ipc-flooding-protection");
-                    options.addArguments("--disable-renderer-backgrounding");
                     
                     // Generate unique remote debugging port
                     int remotePort = 9000 + (int)(Math.random() * 1000);
                     options.addArguments("--remote-debugging-port=" + remotePort);
                     
-                    System.out.println("Starting Chrome on port: " + remotePort);
+                    System.out.println("Starting Chrome with profile: " + userDataDir + " on port: " + remotePort);
                     
                     webDriver = new ChromeDriver(options);
                     break;
@@ -96,8 +95,20 @@ public class DriverManager {
     
     public static void quitDriver() {
         if (driver.get() != null) {
-            driver.get().quit();
-            driver.remove();
+            try {
+                driver.get().quit();
+            } catch (Exception e) {
+                System.err.println("Error quitting driver: " + e.getMessage());
+            } finally {
+                driver.remove();
+            }
+            
+            // Give Chrome time to fully release resources
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
     
