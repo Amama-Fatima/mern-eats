@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 /**
  * WebDriver manager utility class
@@ -42,7 +43,8 @@ public class DriverManager {
                     
                     // Create unique user data directory to avoid conflicts
                     String baseDir = System.getProperty("chrome.userDataDir", System.getProperty("java.io.tmpdir"));
-                    String userDataDir = baseDir + "/chrome-profile-" + System.currentTimeMillis() + "-" + Thread.currentThread().getId();
+                    String uniqueId = UUID.randomUUID().toString();
+                    String userDataDir = baseDir + "/chrome-profile-" + uniqueId;
                     options.addArguments("--user-data-dir=" + userDataDir);
                     
                     if (config.isHeadless()) {
